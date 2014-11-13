@@ -1,17 +1,49 @@
-RTMLtracker {
+RTMLelement {
 
 	var <nodeID;
 	var <synth;
+
+	var <name;
+	var <oscMsgName;
+
+	var parameters;
+
+	*new {
+		^super.new;
+	}
+
+	*elements {
+		^[this.class.dsps,this.class.trackers].flat;
+	}
+
+	*dsps {
+		^[PeakEQ];
+	}
+
+	*trackers{
+		^[OnsetDetector,PitchFollower,BeatTracker,PeakTracker];
+	}
+
+}
+
+RTMLdsp : RTMLelement {
+
+	*new {
+		^super.new;
+	}
+}
+
+RTMLtracker : RTMLelement {
+
+
 	var <>testSound;
 
 	var <>delta = 0.2;
 	var <>msgType;
 
-	var <name;
-	var <oscMsgName;
-	var <>send=false;
 
-	var parameters;
+	var <>send=true;
+
 
 	*new { |channel, monitor|
 		^super.new.initSynth(channel, monitor).initRTMLtracker;
@@ -20,7 +52,7 @@ RTMLtracker {
 	initRTMLtracker {
 
 		nodeID = synth.nodeID;
-		name = RTML.addTracker(this); //given by the RTML number of instances of this type
+		name = RTML.addElement(this); //given by the RTML number of instances of this type
 		oscMsgName = "/rtml" +/+ name;
 
 		testSound = false;
@@ -74,7 +106,7 @@ OnsetDetector : RTMLtracker {
 
 	initSynth { |channel, monitor|
 
-		msgType = \flash;
+		msgType = \one;
 		parameters = Dictionary.newFrom([\channel,channel, \monitor,monitor, \fftSize,512,  \threshold,0.5, \odftype,'rcomplex', \relaxtime,1, \floor,0.1, \mingap,10, \medianspan,11, \whtype,1, \rawodf,0]);
 
 		synth = Synth(\onsetDetector,parameters.getPairs);
@@ -83,6 +115,9 @@ OnsetDetector : RTMLtracker {
 	// private
 	sendMsg {
 		switch (msgType)
+		{\one} {
+			RTML.destAddr.sendMsg(oscMsgName,1);
+		}
 		{\button} {
 			// sending a 1, alternatively open and close button
 			RTML.destAddr.sendMsg(oscMsgName,1);
