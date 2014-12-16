@@ -1,6 +1,8 @@
+// TODO: show entire numer without 0.01 round in slider's numberbox
+
 RTMLview {
 
-	var window;
+	var <window;
 	var bounds;
 
 	var optionsView;
@@ -11,6 +13,23 @@ RTMLview {
 	var elementsViewGap = 0;
 	var drawView;
 	var canvasView;
+	var descriptionView;
+	var feedbackView;
+
+	var audioBusWidth = 200;
+	var audioBusHeight = 50;
+	var <audioBusViews;
+	var <audioBusElements; // saves text accessing the element
+	var audioBusMeters;
+	var meterWidth = 20;
+
+	var <selectedElement; // holds a class, for instanciating
+	var <currentElement; // holds an element instance
+
+	var <propertiesViewList;
+
+	var saveButton;
+	var loadButton;
 
 	*new{
 		^super.new.init;
@@ -22,15 +41,25 @@ RTMLview {
 
 		bounds = Window.availableBounds;
 		window = Window.new("RTML",bounds,resizable:false).front;
+		window.onClose_({RTML.close});
 
 		//----------------------------------------------------------------
 		// window layout
 
 		// options bar
-		optionsView = View(window,Rect(0,0,bounds.width,bounds.height/10));
+		optionsView = View(window,Rect(0,0,bounds.width,bounds.height/20));
 		optionsView.background = Color.grey(0.6);
 
-		drawView = View(window,Rect(0,bounds.height/10,bounds.width,bounds.height*9/10));
+		optionsView.addFlowLayout(0@0,0@0);
+		saveButton = Button.new(optionsView,Rect(0,0,100,bounds.height/20)).states_([["SAVE"]]);
+		saveButton.canFocus_(false);
+		saveButton.action = {RTML.save};
+
+		loadButton = Button.new(optionsView,Rect(0,0,100,bounds.height/20)).states_([["LOAD"]]);
+		loadButton.canFocus_(false);
+		loadButton.action = {RTML.load};
+
+		drawView = View(window,Rect(0,bounds.height/20,bounds.width,bounds.height*19/20));
 		drawView.background = Color.grey(0.4);
 
 		// items bar
@@ -45,21 +74,85 @@ RTMLview {
 		trackersView.background = Color.cyan;
 
 		// canvas
-		canvasView = UserView(drawView,Rect(0,drawView.bounds.height/8,bounds.width,drawView.bounds.height*7/8));
+		canvasView = ScrollView(drawView,Rect(0,drawView.bounds.height/8,bounds.width*0.66,drawView.bounds.height*7/8));
 		canvasView.background = Color.grey(0.9);
+
+		// input audio buses
+		canvasView.addFlowLayout(margin:0@0, gap: 0@0);
+		audioBusViews = Array.newClear(RTML.numInputBuses);
+		audioBusElements = Array.newClear(RTML.numInputBuses);
+		audioBusMeters = Array.newClear(RTML.numInputBuses);
+
+		propertiesViewList = List.new;
+
+		RTML.numInputBuses.do { |i|
+
+			var view, meter;
+
+			view = UserView(canvasView, Rect(0,0,canvasView.bounds.width,audioBusHeight)).background_(Color.rand);
+			meter = LevelIndicator(view,Rect(0,0,meterWidth,view.bounds.height)).drawsPeak_(true);
+			StaticText(view,Rect(0,0,meterWidth,20)).string_("In "++i.asString);
+
+			view.addFlowLayout(meterWidth@0,0@0);
+
+			audioBusViews.put(i,view);
+			audioBusElements.put(i,List.new);
+			audioBusMeters.put(i,meter);
+		};
+
+		// server meters
+		{
+			SynthDef("RTMLInputLevels", {
+				var in = SoundIn.ar((0..RTML.numInputBuses-1));
+				SendPeakRMS.kr(in, 10, 3, "/" ++"RTMLInLevels")
+			}).play(RootNode(RTML.server), nil, \addToHead);
+
+
+			// osc responders
+			OSCFunc({arg msg;
+				var dBLow = -80;
+				var channelCount = msg.size - 3 / 2;
+
+				/*				msg.postln;
+				channelCount.postln;*/
+
+				channelCount.do {|channel|
+					var baseIndex = 3 + (2*channel);
+					var peakLevel = msg.at(baseIndex);
+					var rmsValue  = msg.at(baseIndex + 1);
+					var meter = audioBusMeters.at(channel);
+					if (meter.isClosed.not) {
+						{
+							meter.peakLevel = peakLevel.ampdb.linlin(dBLow, 0, 0, 1, \min);
+							meter.value = rmsValue.ampdb.linlin(dBLow, 0, 0, 1);
+						}.defer;
+					}
+				}
+			}, '/RTMLInLevels', RTML.server.addr);
+
+		}.defer(1); // give time to the server start
+
+
+
+		// descriptionView
+		descriptionView = View(drawView,Rect(drawView.bounds.width*0.66,drawView.bounds.height/8,drawView.bounds.width*0.34,canvasView.bounds.height*0.75)).background_(Color.grey(0.5));
+		descriptionView.addFlowLayout(0@0,0@0);
+
+		// feedbackView
+		feedbackView = View(drawView,Rect(drawView.bounds.width*0.66,drawView.bounds.height/8+canvasView.bounds.height*0.75, drawView.bounds.width*0.34,canvasView.bounds.height*0.25)).background_(Color.grey(0.55));
 
 
 
 		//----------------------------------------------------------------
 		// elements
 		dspsView.addFlowLayout(margin:elementsViewMargin@0,gap:elementsViewGap@0);
-		RTMLelement.dsps.do { |e|
+		RTML.dsps.do { |e|
 			var string = e.asString;
 			StaticText(dspsView,Rect(0,0,elementsViewSize,dspsView.bounds.height)).string_(string);
 		};
 
 		trackersView.addFlowLayout(margin:elementsViewMargin@0,gap:elementsViewGap@0);
-		RTMLelement.trackers.do { |e|
+		RTML.trackers.do { |e|
 			var string = e.asString;
 			StaticText(trackersView,Rect(0,0,elementsViewSize,trackersView.bounds.height)).string_(string);
 		};
@@ -75,17 +168,422 @@ RTMLview {
 
 		trackersView.mouseDownAction = { |view, x, y, modifiers, buttonNumber, clickCount|
 			var trackerIndex = (x - (elementsViewMargin) / elementsViewSize).floor;
-			[trackerIndex].postln;
+			// [trackerIndex].postln;
+
+			if ( trackerIndex >= 0 and: { trackerIndex < RTML.trackers.size }) {
+				selectedElement = RTML.trackers[trackerIndex].postln;
+			}
 		};
 
+
 		drawView.mouseUpAction = { |view, x, y, modifiers|
-			[x,y].postln;
+			//["draw",x,y].postln;
+			//(y-(drawView.bounds.height/8)).postln;
+
+
+			// place element in bus
+			var bus;
+			var optionsHeight = drawView.bounds.height/8;
+			var offsetY = y - optionsHeight;
+
+			if ( offsetY > 0 ) {
+				bus = (offsetY / audioBusHeight).floor;
+
+				if ( bus < RTML.numInputBuses) {
+					bus.postln;
+
+					if ( selectedElement.isNil.not ) {
+
+						//RTML.add
+						this.addElement(selectedElement,bus);
+
+					}
+				};
+			};
+
+			// deselect elements
+			selectedElement = nil;
 		};
 
 		canvasView.mouseUpAction = { |view, x, y, modifiers|
-			[x,y].postln;
-		}
+			["canvas",x,y].postln;
+			// deselect elements
+			selectedElement = nil;
+		};
+
+		audioBusViews.do { |view,i|
+
+			// add/remove elements with click up
+			view.mouseDownAction = { |view, x, y, modifiers|
+
+				var bus = i;
+				var element = ((x - meterWidth) / elementsViewSize).floor;
+
+				if ( element >= 0 ) {
+					if ( element < RTML.elementsByBus[bus].size ) {
+
+						// show element properties
+						currentElement = RTML.elementsByBus[bus][element]; //it's a string
+						this.clearProperties;
+						this.showProperties(currentElement,bus);
+
+						// remove element with Control+click
+						if (modifiers == 262144) {
+							this.removeElement(currentElement,bus);
+							currentElement = nil;
+						}
+
+
+					} {
+						// clear
+						currentElement = nil;
+						this.clearProperties;
+					}
+				};
+				// deselect elements
+				selectedElement = nil;
+			};
+
+			////////////////////// EXPERIMENTAL //////////////////////////////
+
+			/*			// copy elements with mouseUp
+			view.mouseUpAction = { |view, x, y, modifiers|
+			var bus = i;
+			if (currentElement.isNil.not) {
+			this.cloneElement(currentElement,bus);
+			// this.removeElement(currentElement,bus);
+			};
+			// this.moveElement(currentElement,i);
+
+			};*/
+
+
+		};
 
 	}
 
+	addElement { |elementClass, bus|
+
+		var name;
+		//show
+		var text = StaticText(audioBusViews.at(bus),Rect(0,0,elementsViewSize,audioBusHeight));
+		text.string_(elementClass/*.name*/);
+		audioBusElements.at(bus).add(text);
+
+		//add element
+		name=elementClass.new(bus);
+
+		// create instance in propertiesViewList
+		// TODO!!!
+		// propertiesViewList.add( name -> this.createProperties(name,bus).visible_(false));
+
+		^name;
+	}
+
+
+	////////////////////// EXPERIMENTAL //////////////////////////////
+
+	moveElement {  |instance,destBus|
+
+		var initBus;
+		// clone element into final bus
+		this.addElement(instance.class,destBus);
+		initBus = instance.channel;
+		// delete instance
+		this.removeElement(instance.name,initBus);
+	}
+
+	cloneElement { |element,destBus|
+		var text;
+		var instance = RTML.elements.at(element);
+		RTML.cloneElement(instance,3);
+
+		// show
+		text = StaticText(audioBusViews.at(destBus),Rect(0,0,elementsViewSize,audioBusHeight));
+		text.string_(instance.class);
+		audioBusElements.at(destBus).add(text);
+	}
+
+	////////////////////// EXPERIMENTAL //////////////////////////////
+
+
+	removeElement { |element,bus|
+
+		var text;
+
+		// remove element from RTML lists
+		RTML.removeElement(RTML.elements.at(element));
+
+		// audioBusElements.at(bus).do{|e|e.class.postln;e.remove}; //???
+
+		// remove all existing views
+		audioBusViews.at(bus).removeAll;
+
+		// remove flowLayout
+		audioBusViews.at(bus).decorator.left_(0);
+
+		// instanciate again peak meter
+		// remove old instance
+		audioBusMeters.at(bus).remove;
+		// create new inside audioBusMeters, so the osc responder can actuate
+		audioBusMeters.put(bus, LevelIndicator(audioBusViews.at(bus), Rect(0,0,meterWidth,audioBusViews.at(bus).bounds.height)).drawsPeak_(true););
+
+		// instanciate again bus info text
+		audioBusViews.at(bus).decorator.left_(0);
+		StaticText(audioBusViews.at(bus),Rect(0,0,meterWidth,20)).string_("In "++bus.asString);
+
+
+		// create new elements list (delete all previous existing)
+		audioBusElements.put(bus,List.new);
+		// fill elements list with RTML instances
+		RTML.elementsByBus.at(bus).do{|element,i|
+			text = StaticText(audioBusViews.at(bus),Rect(0,0,elementsViewSize,audioBusHeight));
+			text.string_(RTML.elements.at(element).class);
+			element.postln;
+		};
+
+		// clear properties window
+		this.clearProperties;
+	}
+
+
+
+	//----------------------------------------------------------------
+	// properties tab
+
+	clearProperties {
+		descriptionView.removeAll;
+		feedbackView.removeAll;
+	}
+
+
+
+	// TODO: save views and only show them every time, not create them every time
+	/*createProperties { |elementName,channel|
+	// new descriptionView
+	var v = View(drawView, Rect(drawView.bounds.width*0.66,drawView.bounds.height/8, drawView.bounds.width*0.34,canvasView.bounds.height));
+	var w = descriptionView.bounds.width;
+	var h = descriptionView.bounds.height;
+
+	var buttonList = List.new;
+
+	var instance = RTML.elements.at(elementName);
+	var textHeight = 25;
+	v.background_(Color.grey(0.5));
+	descriptionView.addFlowLayout(0@0,0@0);
+
+	// elementName.postln;
+
+	/*		// clear previous description
+	v.removeAll;
+	v.addFlowLayout(0@0,0@0);*/
+
+	// fill descriptionView
+	StaticText(v,Rect(0,0,w,textHeight*2)).string_("PARAMETERS");
+
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_("instance name");
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_(elementName);
+
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_("channel");
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_(channel);
+
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_("oscMessageName");
+	StaticText(v,Rect(0,0,w/2,textHeight)).string_(instance.oscMsgName);
+
+	// separator
+	StaticText(v,Rect(0,0,w,textHeight*2)).string_("");
+
+	// all default button
+	Button(v,Rect(0,0,w/8,textHeight)).states_([["default"]]).action_({
+	buttonList.do(_.doAction)
+	});
+
+
+	// place widgets according to RTMLparameter definitions
+	instance.parameters.keysValuesDo{ |key,value|
+	var gui;
+	var button;
+
+	if ( key != \channel ) {
+	if ( key != \buffer ) {
+
+	// default value button
+	v.decorator.nextLine;
+	button = Button(v,Rect(0,0,w/16,textHeight));
+	buttonList.add( button );
+
+	// search in RTMLparameter the gui definition and attributes
+	switch(RTMLparameter.get(key,\guiType))
+
+	{Slider} {
+	var minVal = RTMLparameter.get(key,\minVal);
+	var maxVal = RTMLparameter.get(key,\maxVal);
+	var warp = RTMLparameter.get(key,\warp);
+	var valueType = RTMLparameter.get(key,\valueType);
+	var step = RTMLparameter.get(key,\step);
+	// however the value we got it from instance.parameters value
+	var spec = ControlSpec(minVal,maxVal,warp,step);
+
+	gui = EZSlider(v,Rect(0,0,w*15/16,textHeight),key,labelWidth:w/4,numberWidth:w/4);
+	gui.controlSpec = spec;
+	gui.value = value;
+
+	gui.round_(0.000001); //?
+
+	gui.action = { |obj|
+	var value = obj.value.postln;
+	instance.set(key,value);
+	};
+
+	button.action_({
+	gui.valueAction_(instance.defaultParameters.at(key));
+	});
+	}
+
+	{PopUpMenu} {
+	var items = RTMLparameter.get(key,\valueList);
+	gui = EZPopUpMenu(v,Rect(0,0,w*15/16,textHeight),key,labelWidth:w/4);
+	gui.items = items;
+	gui.value = items.indexOf(value);
+	gui.globalAction = {|obj|obj.value.postln};
+
+	button.action_({
+	gui.valueAction_(items.indexOf(instance.defaultParameters.at(key)));
+	});
+	};
+	}
+	}
+	};
+
+	//return the view
+	^v;
+	}*/
+
+	showProperties { |elementName,channel|
+		var v = descriptionView;
+		var w = descriptionView.bounds.width;
+		var h = descriptionView.bounds.height;
+
+		var buttonList = List.new;
+
+		var instance = RTML.elements.at(elementName);
+		var textHeight = 25;
+
+		// elementName.postln;
+
+		// clear previous description
+		v.removeAll;
+		v.addFlowLayout(0@0,0@0);
+
+		// fill descriptionView
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_("instance name");
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_(elementName);
+
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_("channel");
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_(channel);
+
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_("oscMessageName");
+		StaticText(v,Rect(0,0,w/2,textHeight)).string_(instance.oscMsgName);
+
+/*		// separator
+		StaticText(v,Rect(0,0,w,textHeight*2)).string_("");*/
+
+		// all default button
+		Button(v,Rect(0,0,w/8,textHeight)).states_([["default"]]).action_({
+			buttonList.do(_.doAction)
+		});
+
+
+		// place widgets according to RTMLparameter definitions
+		instance.parameters.keysValuesDo{ |key,value|
+			var gui;
+			var button;
+
+			if ( key != \channel ) {
+				if ( key != \buffer ) {
+
+					// default value button
+					v.decorator.nextLine;
+					button = Button(v,Rect(0,0,w/16,textHeight));
+					buttonList.add( button );
+
+					// search in RTMLparameter the gui definition and attributes
+					switch(RTMLparameter.get(key,\guiType))
+
+					{Slider} {
+						var minVal = RTMLparameter.get(key,\minVal);
+						var maxVal = RTMLparameter.get(key,\maxVal);
+						var warp = RTMLparameter.get(key,\warp);
+						var valueType = RTMLparameter.get(key,\valueType);
+						var step = RTMLparameter.get(key,\step);
+						// however the value we got it from instance.parameters value
+						var spec = ControlSpec(minVal,maxVal,warp,step);
+
+						gui = EZSlider(v,Rect(0,0,w*15/16,textHeight),key,labelWidth:w/4,numberWidth:w/4);
+						gui.controlSpec = spec;
+						gui.value = value;
+
+						gui.round_(0.000001); //?
+
+						gui.action = { |obj|
+							var value = obj.value.postln;
+							instance.set(key,value);
+						};
+
+						button.action_({
+							gui.valueAction_(instance.defaultParameters.at(key));
+						});
+					}
+
+					{PopUpMenu} {
+						var items = RTMLparameter.get(key,\valueList);
+						gui = EZPopUpMenu(v,Rect(0,0,w*15/16,textHeight),key,labelWidth:w/4);
+						gui.items = items;
+						gui.value = items.indexOf(value);
+						gui.globalAction = {|obj|
+							var value = obj.value.postln;
+							instance.set(key,items.indexOf(value));
+						};
+
+						button.action_({
+							gui.valueAction_(items.indexOf(instance.defaultParameters.at(key)));
+						});
+					};
+				}
+			}
+		};
+
+		// separator
+		// StaticText(v,Rect(0,0,w,textHeight*2)).string_("");
+		// feedbackView = View(v,Rect(0,0,w,200)).background_(Color.red);
+
+		// visualization
+		instance.makeGui(feedbackView);
+	}
+
+	reset {
+		RTML.numInputBuses.do { |bus|
+
+			audioBusElements.put(bus,List.new);
+
+			audioBusViews.at(bus).removeAll;
+			// remove flowLayout
+			audioBusViews.at(bus).decorator.left_(0);
+
+			// instanciate again peak meter
+			// remove old instance
+			audioBusMeters.at(bus).remove;
+			// create new inside audioBusMeters, so the osc responder can actuate
+			audioBusMeters.put(bus, LevelIndicator(audioBusViews.at(bus), Rect(0,0,meterWidth,audioBusViews.at(bus).bounds.height)).drawsPeak_(true););
+
+			// instanciate again bus info text
+			audioBusViews.at(bus).decorator.left_(0);
+			StaticText(audioBusViews.at(bus),Rect(0,0,meterWidth,20)).string_("In "++bus.asString);
+
+			// remove properties view
+			this.clearProperties;
+
+
+		};
+	}
 }
