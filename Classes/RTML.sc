@@ -172,7 +172,7 @@ RTML {
 
 		// get element class index inside trackers/dsps array
 		// decrease count of element instances
-		if (element.class.isKindOfClass(RTMLtracker)) {
+		if (element.class.isKindOfClass2(RTMLtracker)) {
 			elementIndex = trackers.indexOf(element.class);
 			numElements= numTrackers.at(elementIndex);
 			//numTrackers.put(elementIndex,numElements - 1);
@@ -201,7 +201,7 @@ RTML {
 
 		// get element class index inside trackers/dsps array
 		// increase count of element instances
-		if (element.class.isKindOfClass(RTMLtracker)) {
+		if (element.class.isKindOfClass2(RTMLtracker)) {
 			elementIndex = trackers.indexOf(element.class);
 			numElements= numTrackers.at(elementIndex);
 			numTrackers.put(elementIndex,numElements + 1);
