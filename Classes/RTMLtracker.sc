@@ -11,6 +11,8 @@ RTMLelement {
 	var <parameters;
 	var <defaultParameters;
 
+
+
 	/*	*new {
 	^super.new;
 	}*/
@@ -58,8 +60,6 @@ RTMLtracker : RTMLelement {
 	var <>testSound;
 
 	var <>delta = 0.2;
-	var <>msgType;
-
 
 	var <>send=true;
 
@@ -148,6 +148,12 @@ FFTTracker : RTMLtrackerFFT  {
 
 	classvar <synthName = \fftTracker;
 
+	classvar <sendType =  \continuous;
+
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
+
 	*new { |channel = 0, bufferSize = 1024|
 		^super.new.initFFT(channel,bufferSize);
 	}
@@ -172,8 +178,23 @@ FFTTracker : RTMLtrackerFFT  {
 	}
 
 	sendMsg { |array|
-
-		RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 }
 
@@ -182,7 +203,11 @@ MFCCTracker : RTMLtrackerFFT {
 
 	classvar <abstract = false;
 	classvar <synthName = \mfccTracker;
+	classvar <sendType =  \continuous;
 
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 	var sliders;
 	var values;
 
@@ -218,8 +243,23 @@ MFCCTracker : RTMLtrackerFFT {
 	}
 
 	sendMsg { |array|
-
-		RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 
 	makeGui { |view|
@@ -238,6 +278,11 @@ ChromaTracker : RTMLtrackerFFT {
 
 	classvar <abstract = false;
 	classvar <synthName = \chromaTracker;
+	classvar <sendType =  \continuous;
+
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 
 	var sliders;
 	var values;
@@ -274,7 +319,23 @@ ChromaTracker : RTMLtrackerFFT {
 	}
 
 	sendMsg { |array|
-		RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendBundle(0,[oscMsgName]++array);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 
 	makeGui { |view|
@@ -295,7 +356,11 @@ SpectralTracker : RTMLtracker {
 
 	classvar <abstract = false;
 	classvar <synthName = \spectralTracker;
+	classvar <sendType =  \continuous;
 
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 	var sliders;
 
 	*new{ |channel = 0|
@@ -340,9 +405,27 @@ SpectralTracker : RTMLtracker {
 		}.defer;
 	}
 
-	// TODO !!!
 	sendMsg { |type,value = 0|
-		RTML.destAddr.sendMsg(oscMsgName,type,value)
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendMsg(oscMsgName,type,value)
+		}
+		{\trigger} {
+			if (delta==0) { //one value: HERE IS 3 VALUES!!
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,type,value)
+				};
+				// allow for message types 0 and 1 before finishing oneshot trigger
+				if (type == \pcile) {
+					triggerOn = false;
+				};
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,type,value)
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 
 	// TODO: no va!!!!!!
@@ -351,18 +434,18 @@ SpectralTracker : RTMLtracker {
 		view.addFlowLayout(0@0,0@0);
 
 		// centroid
-		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/3));
-		slider.controlSpec = ControlSpec(100,20000,\exponential,100);
+		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/4));
+		slider.controlSpec = ControlSpec(100,20000,\exponential,10);
 		sliders.put(0,slider);
 
 		// flatness
-		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/3));
+		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/4));
 		slider.controlSpec = ControlSpec(0,1,\lin,0.01);
 		sliders.put(1,slider);
 
 		// pcile
-		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/3));
-		slider.controlSpec = ControlSpec(100,20000,\exponential,100);
+		slider = EZSlider(view,Rect(0,0,view.bounds.width,view.bounds.height/4));
+		slider.controlSpec = ControlSpec(100,20000,\exponential,10);
 		sliders.put(2,slider);
 	}
 }
@@ -371,6 +454,11 @@ KeyTracker : RTMLtracker {
 
 	classvar <abstract = false;
 	classvar <synthName = \keyTracker;
+	classvar <sendType =  \continuous;
+
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 
 	classvar keyDict;
 	var textField;
@@ -403,12 +491,30 @@ KeyTracker : RTMLtracker {
 	}
 
 	sendMsg { |value=0|
-		RTML.destAddr.sendMsg(oscMsgName,value);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendMsg(oscMsgName,value);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
+
 
 	makeGui { |view|
 		textField = TextField(view,Rect(0,0,view.bounds.width,view.bounds.height));
 		textField.font_(Font(size:60));
+		textField.align_(\center);
 	}
 
 }
@@ -420,7 +526,9 @@ OnsetDetector : RTMLtracker {
 
 	classvar <abstract = false;
 	classvar <synthName = \onsetDetector;
+	classvar <sendType =  \trigger;
 
+	var <>sendMode = \oneshot;
 	var onsetButton;
 
 	*new{ |channel = 0, monitor = 0|
@@ -429,7 +537,6 @@ OnsetDetector : RTMLtracker {
 
 	initSynth { |channel, monitor|
 
-		msgType = \one;
 		parameters = Dictionary.newFrom([\channel,channel, \monitor,monitor, \fftSize,512,  \threshold,0.5, \odftype,'rcomplex', \relaxtime,1, \floor,0.1, \mingap,10, \medianspan,11, \whtype,1, \rawodf,0]);
 		defaultParameters = parameters.deepCopy;
 
@@ -453,23 +560,23 @@ OnsetDetector : RTMLtracker {
 
 	// private
 	sendMsg {
-		switch (msgType)
-		{\one} {
+		switch (sendMode)
+		{\oneshot} {
 			RTML.destAddr.sendMsg(oscMsgName,1);
 		}
-		{\button} {
+		{\onoff} {
 			// sending a 1, alternatively open and close button
 			RTML.destAddr.sendMsg(oscMsgName,1);
 			{RTML.destAddr.sendMsg(oscMsgName,1)}.defer(delta); // TODO: creo que no va!
 		}
-		{\flash} {
+		{\button} {
 			// sending a 1 open, sending a 0 close
 			RTML.destAddr.sendMsg(oscMsgName,1);
 			{RTML.destAddr.sendMsg(oscMsgName,0)}.defer(delta);
 		}
-		{\random} {
-			RTML.destAddr.sendMsg("/rtml/onset_"++4.rand,1);
-		}
+		/*		{\random} {
+		RTML.destAddr.sendMsg("/rtml/onset_"++4.rand,1);
+		}*/
 
 	}
 
@@ -482,112 +589,133 @@ OnsetDetector : RTMLtracker {
 }
 
 
-BeatTracker : RTMLtracker {
-
-	classvar <abstract = false;
-	classvar <synthName = \beatTracker;
-
-	var buttons; // array: black, half, quarter
-	var numberField;
-
-	*new{ |channel = 0, monitor = 0|
-		^super.new.initSynth(channel).initRTMLtracker(channel);
-	}
-
-	initSynth { |channel, monitor|
-
-		msgType = \flash;
-		parameters = Dictionary.newFrom([\channel,channel, \monitor,monitor, \fftSize,1024, \krChannel,0, \numChannels,5, \windowSize,5, \phaseaccuracy,0.02, \lock,0]);
-		defaultParameters = parameters.deepCopy;
-
-		this.runSynth;
-		//synth = Synth(\beatTracker,parameters.getPairs);
-
-		buttons = Array.newClear(3);
-
-
-	}
-
-	reset {
-		synth.free;
-		synth = Synth(\beatTracker,parameters.getPairs);
-		nodeID = synth.nodeID;
-		RTML.nodeIDs.add(name.asSymbol -> nodeID);
-	}
-
-	oscReceiverFunction { |msg|
-		var button;
-
-		var type = msg[2]; // 0,1,2
-		var tempo = msg[3] * 60; // tempo is in beats per second
-
-		var typeSymbol = switch (type)
-		{0} { // black
-			\black;
-		}
-		{1} { // half
-			\half;
-		}
-		{2} { // quarter
-			\quarter;
-		};
-
-		this.sendMsg(type, tempo);
-
-		// gui
-		{
-			if (numberField.isNil.not){
-				button = buttons[type];
-				Task({
-					button.value_(1);
-					0.05.wait;
-					button.value_(0);
-				}).play(AppClock);
-
-				numberField.value = tempo;
-			}
-		}.defer;
-
-	}
-
-	// private
-	sendMsg { |onsetType, tempo, msgType|
-		switch (msgType)
-		{\button} {
-			// sending a 1, alternatively open and close button
-			RTML.destAddr.sendMsg(oscMsgName,1);
-			{RTML.destAddr.sendMsg(oscMsgName,1)}.defer(delta);
-		}
-		{\flash} {
-			// sending a 1 open, sending a 0 close
-			RTML.destAddr.sendMsg(oscMsgName,1);
-			{RTML.destAddr.sendMsg(oscMsgName,0)}.defer(delta);
-		}
-	}
-
-	makeGui { |view|
-		3.do { |i|
-			var b = Button(view,Rect(view.bounds.width*i/3,0,view.bounds.width/3,view.bounds.height*0.75));
-			b.states_([["",Color.grey,Color.grey],["",Color.red,Color.red]]);
-			b.canFocus_(false);
-			buttons = buttons.put(i,b);
-		};
-
-		numberField = NumberBox(view,Rect(0,view.bounds.height*0.75,view.bounds.width,view.bounds.height*0.25));
-
-	}
-}
+// BeatTracker : RTMLtracker {
+//
+// 	classvar <abstract = false;
+// 	classvar <synthName = \beatTracker;
+// 	classvar <sendType =  \trigger;
+//
+// 	var <>sendMode = \oneshot;
+// 	var buttons; // array: black, half, quarter
+// 	var numberField;
+//
+// 	*new{ |channel = 0, monitor = 0|
+// 		^super.new.initSynth(channel).initRTMLtracker(channel);
+// 	}
+//
+// 	initSynth { |channel, monitor|
+//
+// 		parameters = Dictionary.newFrom([\channel,channel, \monitor,monitor, \fftSize,1024, \krChannel,0, \numChannels,5, \windowSize,5, \phaseaccuracy,0.02, \lock,0]);
+// 		defaultParameters = parameters.deepCopy;
+//
+// 		this.runSynth;
+// 		//synth = Synth(\beatTracker,parameters.getPairs);
+//
+// 		buttons = Array.newClear(3);
+//
+//
+// 	}
+//
+// 	reset {
+// 		synth.free;
+// 		synth = Synth(\beatTracker,parameters.getPairs);
+// 		nodeID = synth.nodeID;
+// 		RTML.nodeIDs.add(name.asSymbol -> nodeID);
+// 	}
+//
+// 	oscReceiverFunction { |msg|
+// 		var button;
+//
+// 		var type = msg[2]; // 0,1,2
+// 		var tempo = msg[3] * 60; // tempo is in beats per second
+//
+// 		var typeSymbol = switch (type)
+// 		{0} { // black
+// 			\black;
+// 		}
+// 		{1} { // half
+// 			\half;
+// 		}
+// 		{2} { // quarter
+// 			\quarter;
+// 		};
+//
+// 		this.sendMsg(type, tempo);
+//
+// 		// gui
+// 		{
+// 			if (numberField.isNil.not){
+// 				button = buttons[type];
+// 				Task({
+// 					button.value_(1);
+// 					0.05.wait;
+// 					button.value_(0);
+// 				}).play(AppClock);
+//
+// 				numberField.value = tempo;
+// 			}
+// 		}.defer;
+//
+// 	}
+//
+// 	// private
+// 	sendMsg { |onsetType, tempo|
+// 		switch (sendMode)
+// 		{\oneshot} {
+// 			RTML.destAddr.sendMsg(oscMsgName,sendType,tempo,1);
+// 		}
+// 		{\onoff} {
+// 			// sending a 1, alternatively open and close button
+// 			RTML.destAddr.sendMsg(oscMsgName,sendType,tempo,1);
+// 			{RTML.destAddr.sendMsg(oscMsgName,sendType,tempo,1);}.defer(delta); // TODO: creo que no va!
+// 		}
+// 		{\button} {
+// 			// sending a 1 open, sending a 0 close
+// 			RTML.destAddr.sendMsg(oscMsgName,sendType,tempo,1);
+// 			{RTML.destAddr.sendMsg(oscMsgName,sendType,tempo,0);}.defer(delta);
+// 		}
+//
+//
+//
+// 		/*		switch (sendMode)
+// 		{\oneshot} {
+// 		// sending a 1, alternatively open and close button
+// 		RTML.destAddr.sendMsg(oscMsgName,1);
+// 		{RTML.destAddr.sendMsg(oscMsgName,1)}.defer(delta);
+// 		}
+// 		{\flash} {
+// 		// sending a 1 open, sending a 0 close
+// 		RTML.destAddr.sendMsg(oscMsgName,1);
+// 		{RTML.destAddr.sendMsg(oscMsgName,0)}.defer(delta);
+// 		}*/
+// 	}
+//
+// 	makeGui { |view|
+// 		3.do { |i|
+// 			var b = Button(view,Rect(view.bounds.width*i/3,0,view.bounds.width/3,view.bounds.height*0.75));
+// 			b.states_([["",Color.grey,Color.grey],["",Color.red,Color.red]]);
+// 			b.canFocus_(false);
+// 			buttons = buttons.put(i,b);
+// 		};
+//
+// 		numberField = NumberBox(view,Rect(0,view.bounds.height*0.75,view.bounds.width,view.bounds.height*0.25));
+//
+// 	}
+// }
 
 
 PitchFollower : RTMLtracker {
 
 	classvar <abstract = false;
 	classvar <synthName = \pitchTracker;
+	classvar <sendType =  \continuous;
 
-	var <>mode = \pitch1;
-	var <toneSynth;
-
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 	var valueSlider;
+
+	var <toneSynth;
 
 	*new{ |channel = 0, monitor = 0|
 		^super.new.initSynth(channel).initRTMLtracker(channel);
@@ -595,7 +723,6 @@ PitchFollower : RTMLtracker {
 
 	initSynth { |channel, monitor|
 
-		msgType = \flash;/////////////
 		parameters = Dictionary.newFrom([\channel,channel, \monitor,monitor, \initFreq,440, \minFreq,60, \maxFreq,4000, \execFreq,100, \maxBinsPerOctave,16, \median,1, \ampThreshold,0.01, \peakThreshold,0.5, \downSample,1, \clar,0, \replyRate,20]);
 
 		this.runSynth;
@@ -625,7 +752,23 @@ PitchFollower : RTMLtracker {
 	}
 
 	sendMsg { |value=0|
-		RTML.destAddr.sendMsg(oscMsgName,value);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendMsg(oscMsgName,value);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 
 	makeGui { |view|
@@ -640,7 +783,11 @@ PeakTracker : RTMLtracker {
 
 	classvar <abstract = false;
 	classvar <synthName = \peakTracker;
+	classvar <sendType =  \continuous;
 
+	var <>sendMode = \continuous;
+	var <>registerTrigger = nil; // instance.name of a \trigger tracker
+	var <>triggerOn = false;
 	var valueSlider;
 
 	*new{ |channel = 0, monitor = 0|
@@ -669,7 +816,23 @@ PeakTracker : RTMLtracker {
 	}
 
 	sendMsg { |value=0|
-		RTML.destAddr.sendMsg(oscMsgName,value);
+		switch (sendMode)
+		{\continuous} {
+			RTML.destAddr.sendMsg(oscMsgName,value);
+		}
+		{\trigger} {
+			if (delta==0) { //one value
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				triggerOn = false;
+			} { // delta seconds after
+				if (triggerOn) {
+					RTML.destAddr.sendMsg(oscMsgName,value);
+				};
+				// triggerOn will be disabled from SystemClock.sched in RTML.oscReceiver
+			}
+		}
 	}
 
 	makeGui { |view|
